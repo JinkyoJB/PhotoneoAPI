@@ -8,9 +8,6 @@
 */
 
 //#include <ctime>
-//#include <opencv2/opencv.hpp>
-//#include <opencv2/highgui/highgui.hpp>
-//#include <opencv2/core/core.hpp>
 
 #define PHOXI_OPENCV_SUPPORT
 #define PHOXI_PCL_SUPPORT
@@ -26,6 +23,9 @@
 #include "PhoXi.h"
 
 #include <fstream>
+#include <opencv2/core.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgcodecs.hpp>
 
 #if defined(_WIN32)
     #define DELIMITER "\\"
@@ -48,6 +48,7 @@ class FullAPIExample
     //cumstom function
     void ConnectPhoXiDeviceFromConfig();
     std::string trim(const std::string &str);
+    void SoftwareTriggerExample2();
 
 
 
@@ -101,6 +102,7 @@ class FullAPIExample
     ~FullAPIExample() {};
     void Run();
     void CustomRun();
+    void OpenCVTest();
 
 };
 
@@ -1338,146 +1340,6 @@ void FullAPIExample::Run()
 
 
 
-//custom code
-void FullAPIExample::SoftwareTriggerExample2()
-{
-    // Check if the device is connected
-    if (!PhoXiDevice || !PhoXiDevice->isConnected())
-    {
-        std::cout << "Device is not created, or not connected!" << std::endl;
-        return;
-    }
-    // If it is not in Software trigger mode, we need to switch the modes
-    if (PhoXiDevice->TriggerMode != pho::api::PhoXiTriggerMode::Software)
-    {
-        std::cout << "Device is not in Software trigger mode" << std::endl;
-        if (PhoXiDevice->isAcquiring())
-        {
-            std::cout << "Stopping acquisition" << std::endl;
-            // If the device is in Acquisition mode, we need to stop the acquisition
-            if (!PhoXiDevice->StopAcquisition())
-            {
-                throw std::runtime_error("Error in StopAcquistion");
-            }
-        }
-        std::cout << "Switching to Software trigger mode " << std::endl;
-        // Switching the mode is as easy as assigning of a value, it will call the appropriate calls in the background
-        PhoXiDevice->TriggerMode = pho::api::PhoXiTriggerMode::Software;
-        // Just check if did everything run smoothly
-        if (!PhoXiDevice->TriggerMode.isLastOperationSuccessful())
-        {
-            throw std::runtime_error(PhoXiDevice->TriggerMode.GetLastErrorMessage().c_str());
-        }
-    }
-
-    // Start the device acquisition, if necessary
-    if (!PhoXiDevice->isAcquiring())
-    {
-        if (!PhoXiDevice->StartAcquisition())
-        {
-            throw std::runtime_error("Error in StartAcquisition");
-        }
-    }
-    // We can clear the current Acquisition buffer -- This will not clear Frames that arrives to the PC after the Clear command is performed
-    int ClearedFrames = PhoXiDevice->ClearBuffer();
-    std::cout << ClearedFrames << " frames were cleared from the cyclic buffer" << std::endl;
-
-    // While we checked the state of the StartAcquisition call, this check is not necessary, but it is a good practice
-    if (!PhoXiDevice->isAcquiring())
-    {
-        std::cout << "Device is not acquiring" << std::endl;
-        return;
-    }
-
-    // Create a variable to store the sample frame
-    pho::api::PFrame SampleFrame;
-
-    for (std::size_t i = 1; i < 2; ++i)
-    {
-        std::cout << "Triggering the " << i << "-th frame" << std::endl;
-        int FrameID = PhoXiDevice->TriggerFrame(/*If false is passed here, the device will reject the frame if it is not ready to be triggered, if true is supplied, it will wait for the trigger*/);
-        if (FrameID < 0)
-        {
-            // If a negative number is returned, trigger was unsuccessful
-            std::cout << "Trigger was unsuccessful! code=" << FrameID << std::endl;
-            continue;
-        }
-        else
-        {
-            std::cout << "Frame was triggered, Frame Id: " << FrameID << std::endl;
-        }
-
-        std::cout << "Waiting for frame " << i << std::endl;
-        // Wait for a frame with a specific FrameID.
-        SampleFrame = PhoXiDevice->GetSpecificFrame(FrameID);
-
-        if (SampleFrame)
-        {
-            // 현재 timestamp에 맞게 frame 이름 만들기
-            std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
-            std::time_t now_c = std::chrono::system_clock::to_time_t(now);
-            std::tm *now_tm = std::localtime(&now_c);
-            char timestamp[80];
-            std::strftime(timestamp, sizeof(timestamp), "%Y%m%d%H%M%S", now_tm);
-
-            std::string frameFileName = "Frame_" + std::to_string(i) + "_" + timestamp;
-            std::string frameFileNamePly = frameFileName + ".ply";
-
-            // ply로 저장
-            //  You can store the Frame as a ply structure
-            //  If you don't specify Output folder, the PLY file will be saved in the same folder where the FullAPIExample executable is located
-            const auto outputFolder = OutputFolder.empty() ? std::string() : OutputFolder + DELIMITER;
-            const auto sampleFramePly = outputFolder + frameFileNamePly;
-            std::cout << "Saving frame as '" << frameFileNamePly << "'" << std::endl;
-            if (SampleFrame->SaveAsPly(sampleFramePly, true, true))
-            {
-                std::cout << "Saved sample frame as PLY to: " << sampleFramePly << std::endl;
-            }
-            else
-            {
-                std::cout << "Could not save sample frame as PLY to " << sampleFramePly << " !" << std::endl;
-            }
-
-            // You can save scans to any format, you only need to specify path + file name
-            // API will look at the extension and save the scan in the correct format
-            // You can define which options to save (PointCloud, DepthMap, ...) in PhoXi Control application -> Saving options
-            // This method has an optional 2nd parameter: FrameId
-            // Use this option to save other scans than the last one
-            // Absolute path is preferred
-            // If you don't specify Output folder the file will be saved to %APPDATA%\PhotoneoPhoXiControl\ folder on Windows or ~/.PhotoneoPhoXiControl/ on Linux
-            const auto sampleFrameAnyFormat = outputFolder + "OtherSampleFrame.tif";
-            if (PhoXiDevice->SaveLastOutput(sampleFrameAnyFormat))
-            {
-                std::cout << "Saved sample frame to: " << sampleFrameAnyFormat << std::endl;
-            }
-            else
-            {
-                std::cout << "Could not save sample frame to: " << sampleFrameAnyFormat << " !" << std::endl;
-            }
-
-            // 다른 포맷으로도 저장
-            std::string frameFileNameColorPng = OutputFolder + frameFileName + "_color" + ".png";
-            std::string frameFileNameDepthPng = OutputFolder + frameFileName + "_depth" + ".png";
-
-            if (SampleFrame)
-            {
-                convertToOpenCV(SampleFrame);
-                saveColorCameraImage(SampleFrame, frameFileNameColorPng);
-                saveDepthImage(SampleFrame, frameFileNameDepthPng);
-            }
-        }
-        else
-        {
-            std::cout << "Failed to retrieve the frame!";
-        }
-    }
-}
-
-
-
-
-
-
 // trim leading and trailing whitespace from a string
 std::string FullAPIExample::trim(const std::string &str)
 {
@@ -1569,25 +1431,42 @@ void FullAPIExample::CustomRun()
 {
 //    std::cout << "customRun";
 
+    OpenCVTest();
+    // try
+    // {
+    //     ConnectPhoXiDeviceFromConfig(); // connect to using config.txt
+    //     // BasicDeviceStateExample();      //check the device info
 
-    try
-    {
-        ConnectPhoXiDeviceFromConfig(); // connect to using config.txt
-        // BasicDeviceStateExample();      //check the device info
-
-        SoftwareTriggerExample(); // after trigger action and save
-    }
-    catch (std::runtime_error &InternalException)
-    {
-        std::cout << std::endl
-                  << "Exception was thrown: " << InternalException.what() << std::endl;
-        if (PhoXiDevice->isConnected())
-        {
-            PhoXiDevice->Disconnect(true);
-        }
-    }
+    //     SoftwareTriggerExample2(); // after trigger action and save
+    // }
+    // catch (std::runtime_error &InternalException)
+    // {
+    //     std::cout << std::endl
+    //               << "Exception was thrown: " << InternalException.what() << std::endl;
+    //     if (PhoXiDevice->isConnected())
+    //     {
+    //         PhoXiDevice->Disconnect(true);
+    //     }
+    // }
 }
 
+// 피카츄 사진으로 opencv링크확인 테스트
+void FullAPIExample::OpenCVTest(){
+    // 이미지 파일 경로 지정
+    std::string imagePath = "../pica.jpeg";
+
+    cv::Mat image = cv::imread(imagePath);
+
+    if (image.empty())
+    {
+        std::cerr << "Error: Could not open or find the image." << std::endl;
+        return;
+    }
+
+    cv::imshow("Image Viewer", image);
+    cv::waitKey(0);
+    cv::destroyAllWindows();
+}
 
 int main(int argc, char *argv[])
 {
