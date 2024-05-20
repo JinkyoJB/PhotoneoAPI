@@ -26,6 +26,7 @@
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp> 
 
 #if defined(_WIN32)
     #define DELIMITER "\\"
@@ -43,14 +44,15 @@ class FullAPIExample
     pho::api::PFrame SampleFrame;
     std::vector <pho::api::PhoXiDeviceInformation> DeviceList;
     std::string FileCameraFolder = "";
-    std::string OutputFolder = "";
+    std::string OutputFolder = "../output/";
 
     //cumstom function
     void ConnectPhoXiDeviceFromConfig();
     std::string trim(const std::string &str);
     void SoftwareTriggerExample2();
-
-
+    void convertToOpenCV(const pho::api::PFrame &Frame);
+    void saveColorCameraImage(const pho::api::PFrame &Frame, const std::string &outputFileName);
+    void saveDepthImage(const pho::api::PFrame &Frame, const std::string &outputFileName);
 
     void GetAvailableDevicesExample();
     void ConnectPhoXiDeviceExample();
@@ -103,6 +105,7 @@ class FullAPIExample
     void Run();
     void CustomRun();
     void OpenCVTest();
+    // void PCTest(const std::string &fileDir);
 
 };
 
@@ -1338,6 +1341,102 @@ void FullAPIExample::Run()
     }
 }
 
+//---------------------------------------custom code---------------------------------
+
+// MinimalOpenCV에서 따온 코드
+void FullAPIExample::convertToOpenCV(const pho::api::PFrame &Frame)
+{
+    std::cout << "Frame " << Frame->Info.FrameIndex << "\n";
+    if (!Frame->PointCloud.Empty())
+    {
+        cv::Mat PointCloudMat;
+        if (Frame->PointCloud.ConvertTo(PointCloudMat))
+        {
+
+            // YOUR CODE HERE INSTEAD OF THIS SIMPLE EXAMPLE
+            cv::Point3f MiddlePoint = PointCloudMat.at<cv::Point3f>(
+                PointCloudMat.rows / 2, PointCloudMat.cols / 2);
+            std::cout << "Middle point: " << MiddlePoint.x << "; "
+                      << MiddlePoint.y << "; " << MiddlePoint.z << std::endl;
+        }
+        std::cout << "Number of points in OpenCV Cloud : "
+                  << PointCloudMat.size() << std::endl;
+    }
+}
+
+// ColorCameraImage.png 저장하는 함수
+void FullAPIExample::saveColorCameraImage(const pho::api::PFrame &Frame, const std::string &outputFileName)
+{
+
+    // data type 확인
+    if (!Frame->ColorCameraImage.Empty())
+    {
+        std::cout << "    ColorCameraImage:      (" << Frame->ColorCameraImage.Size.Width
+                  << " x " << Frame->ColorCameraImage.Size.Height
+                  << ") Type: " << Frame->ColorCameraImage.GetElementName()
+                  << std::endl;
+    }
+
+    if (!Frame->ColorCameraImage.Empty())
+    {
+        const int height = Frame->ColorCameraImage.Size.Height;
+        const int width = Frame->ColorCameraImage.Size.Width;
+
+        // Convert ColorCameraImage to OpenCV Mat
+        cv::Mat colorImage(height, width, CV_16SC3, Frame->ColorCameraImage.GetDataPtr());
+        // cv::imwrite(outputFileName +"_ori.png", colorImage);
+
+        // Create a deep copy of colorImage
+        cv::Mat colorImage2 = colorImage.clone();
+
+        // Convert the color order from BGR to RGB
+        colorImage2.convertTo(colorImage2, CV_8UC3);
+        cv::cvtColor(colorImage2, colorImage2, cv::COLOR_BGR2RGB);
+        cv::imwrite(outputFileName, colorImage2);
+
+        std::cout << "Color camera image saved as " << outputFileName << std::endl;
+    }
+    else
+    {
+        std::cout << "Color camera image is empty, cannot save." << std::endl;
+    }
+}
+
+// DepthImage.png 저장하는 함수
+void FullAPIExample::saveDepthImage(const pho::api::PFrame &Frame, const std::string &outputFileName)
+{
+    // data type 확인
+    if (!Frame->DepthMap.Empty())
+    {
+        std::cout << "    DepthMap:      (" << Frame->DepthMap.Size.Width
+                  << " x " << Frame->DepthMap.Size.Height
+                  << ") Type: " << Frame->DepthMap.GetElementName()
+                  << std::endl;
+    }
+    if (!Frame->DepthMap.Empty())
+    {
+        // Get the height and width of the DepthMap
+        const int height = Frame->DepthMap.Size.Height;
+        const int width = Frame->DepthMap.Size.Width;
+
+        // Create an OpenCV Mat from the DepthMap data
+        cv::Mat depthImage(height, width, CV_32FC1, Frame->DepthMap.GetDataPtr());
+
+        // Convert the depth values to a format suitable for display (e.g., 8-bit)
+        cv::Mat depthImageDisplay;
+        cv::normalize(depthImage, depthImageDisplay, 0, 255, cv::NORM_MINMAX, CV_8U);
+
+        // Save the depth image as a PNG file
+        cv::imwrite(outputFileName, depthImageDisplay);
+
+        std::cout << "Depth image saved as " << outputFileName << std::endl;
+    }
+    else
+    {
+        std::cout << "Depth image is empty, cannot save." << std::endl;
+    }
+}
+
 
 
 // trim leading and trailing whitespace from a string
@@ -1427,28 +1526,145 @@ void FullAPIExample::ConnectPhoXiDeviceFromConfig()
 }
 
 
+void FullAPIExample::SoftwareTriggerExample2()
+{
+    //Check if the device is connected
+    if (!PhoXiDevice || !PhoXiDevice->isConnected())
+    {
+        std::cout << "Device is not created, or not connected!" << std::endl;
+        return;
+    }
+    //If it is not in Software trigger mode, we need to switch the modes
+    if (PhoXiDevice->TriggerMode != pho::api::PhoXiTriggerMode::Software)
+    {
+        std::cout << "Device is not in Software trigger mode" << std::endl;
+        if (PhoXiDevice->isAcquiring())
+        {
+            std::cout << "Stopping acquisition" << std::endl;
+            //If the device is in Acquisition mode, we need to stop the acquisition
+            if (!PhoXiDevice->StopAcquisition())
+            {
+                throw std::runtime_error("Error in StopAcquistion");
+            }
+        }
+        std::cout << "Switching to Software trigger mode " << std::endl;
+        //Switching the mode is as easy as assigning of a value, it will call the appropriate calls in the background
+        PhoXiDevice->TriggerMode = pho::api::PhoXiTriggerMode::Software;
+        //Just check if did everything run smoothly
+        if (!PhoXiDevice->TriggerMode.isLastOperationSuccessful())
+        {
+            throw std::runtime_error(PhoXiDevice->TriggerMode.GetLastErrorMessage().c_str());
+        }
+    }
+
+    //Start the device acquisition, if necessary
+    if (!PhoXiDevice->isAcquiring())
+    {
+        if (!PhoXiDevice->StartAcquisition())
+        {
+            throw std::runtime_error("Error in StartAcquisition");
+        }
+    }
+    //We can clear the current Acquisition buffer -- This will not clear Frames that arrives to the PC after the Clear command is performed
+    int ClearedFrames = PhoXiDevice->ClearBuffer();
+    std::cout << ClearedFrames << " frames were cleared from the cyclic buffer" << std::endl;
+
+    //While we checked the state of the StartAcquisition call, this check is not necessary, but it is a good practice
+    if (!PhoXiDevice->isAcquiring())
+    {
+        std::cout << "Device is not acquiring" << std::endl;
+        return;
+    }
+    for (std::size_t i = 0; i < 5; ++i) // how many frames to save
+    {
+        std::cout << "Triggering the " << i << "-th frame" << std::endl;
+        int FrameID = PhoXiDevice->TriggerFrame(/*If false is passed here, the device will reject the frame if it is not ready to be triggered, if true us supplied, it will wait for the trigger*/);
+        if (FrameID < 0)
+        {
+            //If negative number is returned trigger was unsuccessful
+            std::cout << "Trigger was unsuccessful! code=" << FrameID << std::endl;
+            continue;
+        }
+        else
+        {
+            std::cout << "Frame was triggered, Frame Id: " << FrameID << std::endl;
+        }
+
+        std::cout << "Waiting for frame " << i << std::endl;
+        //Wait for a frame with specific FrameID. There is a possibility, that frame triggered before the trigger will arrive after the trigger call, and will be retrieved before requested frame
+        //  Because of this, the TriggerFrame call returns the requested frame ID, so it can then be retrieved from the Frame structure. This call is doing that internally in background
+        pho::api::PFrame SampleFrame = PhoXiDevice->GetSpecificFrame(FrameID/*, You can specify Timeout here - default is the Timeout stored in Timeout Feature -> Infinity by default*/);
+        if (SampleFrame)
+        {
+            PrintFrameInfo(SampleFrame);
+            PrintFrameData(SampleFrame);
+
+            // Function to get the current timestamp as a string
+            std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+            std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+            std::tm *now_tm = std::localtime(&now_c);
+            char timestamp[80];
+            std::strftime(timestamp, sizeof(timestamp), "%Y%m%d%H%M%S", now_tm);
+
+            std::string frameFileName = "Frame_" + std::to_string(i) + "_" + timestamp;
+            std::string frameFileNamePly = frameFileName + ".ply";
+
+            // Save frame as PLY file
+            if (!SampleFrame->PointCloud.Empty())
+            {
+                if (SampleFrame->SaveAsPly(frameFileNamePly, true, true))
+                {
+                    std::cout << "Saved point cloud to " << frameFileNamePly << std::endl;
+                }
+                else
+                {
+                    std::cout << "Could not save point cloud to " << frameFileNamePly << std::endl;
+                }
+            }
+
+            // 다른 포맷으로도 저장
+            std::string frameFileNameColorPng = OutputFolder + frameFileName + "_color" + ".png";
+            std::string frameFileNameDepthPng = OutputFolder + frameFileName + "_depth" + ".png";
+
+            if (SampleFrame)
+            {
+                convertToOpenCV(SampleFrame);
+                saveColorCameraImage(SampleFrame, frameFileNameColorPng);
+                saveDepthImage(SampleFrame, frameFileNameDepthPng);
+            }
+        }
+        else
+        {
+            std::cout << "Failed to retrieve the frame!";
+        }
+    }
+}
+
+
 void FullAPIExample::CustomRun()
 {
-//    std::cout << "customRun";
+   std::cout << "customRun";
 
-    OpenCVTest();
-    // try
-    // {
-    //     ConnectPhoXiDeviceFromConfig(); // connect to using config.txt
-    //     // BasicDeviceStateExample();      //check the device info
+    // OpenCVTest();
+    // PCTest("../output/Frame_1_20240520094320.ply");
+    try
+    {
+        ConnectPhoXiDeviceFromConfig(); // connect to using config.txt
+        // BasicDeviceStateExample();      //check the device info
 
-    //     SoftwareTriggerExample2(); // after trigger action and save
-    // }
-    // catch (std::runtime_error &InternalException)
-    // {
-    //     std::cout << std::endl
-    //               << "Exception was thrown: " << InternalException.what() << std::endl;
-    //     if (PhoXiDevice->isConnected())
-    //     {
-    //         PhoXiDevice->Disconnect(true);
-    //     }
-    // }
+        SoftwareTriggerExample2(); // after trigger action and save
+    }
+    catch (std::runtime_error &InternalException)
+    {
+        std::cout << std::endl
+                  << "Exception was thrown: " << InternalException.what() << std::endl;
+        if (PhoXiDevice->isConnected())
+        {
+            PhoXiDevice->Disconnect(true);
+        }
+    }
 }
+
 
 // 피카츄 사진으로 opencv링크확인 테스트
 void FullAPIExample::OpenCVTest(){

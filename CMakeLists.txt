@@ -59,6 +59,10 @@ if(MSVC)
 endif(MSVC)
 
 target_include_directories (FullAPIExample PUBLIC ${PHOXI_INCLUDE_DIRS})
+include_directories(${PCL_INCLUDE_DIRS})
+include_directories(${OpenCV_INCLUDE_DIRS})
+link_directories(${PCL_LIBRARY_DIRS})
+add_definitions(${PCL_DEFINITIONS})
 
 set_target_properties(FullAPIExample
     PROPERTIES
