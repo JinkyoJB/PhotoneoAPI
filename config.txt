@@ -1,0 +1,3 @@
+IP_add4 = 192.168.0.2
+ID = TRD-142
+IP_add6 = fe80::4ab0:2dff:fe68:1f77%enp5s0
