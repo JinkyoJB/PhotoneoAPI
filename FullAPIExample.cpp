@@ -52,7 +52,7 @@ class FullAPIExample
     void SoftwareTriggerExample2();
     void convertToOpenCV(const pho::api::PFrame &Frame);
     void saveColorCameraImage(const pho::api::PFrame &Frame, const std::string &outputFileName);
-    void saveDepthImage(const pho::api::PFrame &Frame, const std::string &outputFileName);
+    void saveDepthImage(const pho::api::PFrame &Frame, const std::string &outputFileName, const std::string &outputFormat);
 
     void GetAvailableDevicesExample();
     void ConnectPhoXiDeviceExample();
@@ -1382,17 +1382,24 @@ void FullAPIExample::saveColorCameraImage(const pho::api::PFrame &Frame, const s
         const int height = Frame->ColorCameraImage.Size.Height;
         const int width = Frame->ColorCameraImage.Size.Width;
 
-        // Convert ColorCameraImage to OpenCV Mat
+        // Convert ColorCameraImage to OpenCV Mat, not working CV_16UC3
         cv::Mat colorImage(height, width, CV_16SC3, Frame->ColorCameraImage.GetDataPtr());
-        // cv::imwrite(outputFileName +"_ori.png", colorImage);
 
-        // Create a deep copy of colorImage
-        cv::Mat colorImage2 = colorImage.clone();
+        // Convert RBG to BGR by swapping the second and third channels
+        std::vector<cv::Mat> channels(3);
+        cv::split(colorImage, channels);
+        std::swap(channels[0], channels[2]);
+        cv::merge(channels, colorImage);
 
-        // Convert the color order from BGR to RGB
-        colorImage2.convertTo(colorImage2, CV_8UC3);
-        cv::cvtColor(colorImage2, colorImage2, cv::COLOR_BGR2RGB);
-        cv::imwrite(outputFileName, colorImage2);
+        // Save the image to file
+        if (cv::imwrite(outputFileName, colorImage))
+        {
+            std::cout << "Image saved successfully to " << outputFileName << std::endl;
+        }
+        else
+        {
+            std::cerr << "Failed to save the image to " << outputFileName << std::endl;
+        }
 
         std::cout << "Color camera image saved as " << outputFileName << std::endl;
     }
@@ -1402,10 +1409,10 @@ void FullAPIExample::saveColorCameraImage(const pho::api::PFrame &Frame, const s
     }
 }
 
-// DepthImage.png 저장하는 함수
-void FullAPIExample::saveDepthImage(const pho::api::PFrame &Frame, const std::string &outputFileName)
+//"png8" , "png16", "tiff" 을 property로 받음
+void FullAPIExample::saveDepthImage(const pho::api::PFrame &Frame, const std::string &outputFileName, const std::string &outputFormat)
 {
-    // data type 확인
+    // check data type
     if (!Frame->DepthMap.Empty())
     {
         std::cout << "    DepthMap:      (" << Frame->DepthMap.Size.Width
@@ -1413,6 +1420,7 @@ void FullAPIExample::saveDepthImage(const pho::api::PFrame &Frame, const std::st
                   << ") Type: " << Frame->DepthMap.GetElementName()
                   << std::endl;
     }
+
     if (!Frame->DepthMap.Empty())
     {
         // Get the height and width of the DepthMap
@@ -1422,22 +1430,62 @@ void FullAPIExample::saveDepthImage(const pho::api::PFrame &Frame, const std::st
         // Create an OpenCV Mat from the DepthMap data
         cv::Mat depthImage(height, width, CV_32FC1, Frame->DepthMap.GetDataPtr());
 
-        // Convert the depth values to a format suitable for display (e.g., 8-bit)
-        cv::Mat depthImageDisplay;
-        cv::normalize(depthImage, depthImageDisplay, 0, 255, cv::NORM_MINMAX, CV_8U);
+        if (outputFormat == "png8")
+        {
+            // Convert the depth values to a format suitable for display (e.g., 8-bit)
+            cv::Mat depthImageDisplay;
+            cv::normalize(depthImage, depthImageDisplay, 0, 255, cv::NORM_MINMAX, CV_8U);
 
-        // Save the depth image as a PNG file
-        cv::imwrite(outputFileName, depthImageDisplay);
+            // Save the depth image as a PNG file
+            if (cv::imwrite(outputFileName, depthImageDisplay))
+            {
+                std::cout << "Depth image saved successfully as " << outputFileName << std::endl;
+            }
+            else
+            {
+                std::cerr << "Failed to save the depth image as " << outputFileName << std::endl;
+            }
+        }
+        else if (outputFormat == "png16")
+        {
+            // Normalize the depth image to 16-bit
+            cv::Mat depthImage16U;
+            double minVal, maxVal;
+            cv::minMaxLoc(depthImage, &minVal, &maxVal);
+            depthImage.convertTo(depthImage16U, CV_16UC1, 65535.0 / (maxVal - minVal), -minVal * 65535.0 / (maxVal - minVal));
 
-        std::cout << "Depth image saved as " << outputFileName << std::endl;
+            // Save the depth image to file
+            if (cv::imwrite(outputFileName, depthImage16U))
+            {
+                std::cout << "Depth image saved successfully as " << outputFileName << std::endl;
+            }
+            else
+            {
+                std::cerr << "Failed to save the depth image as " << outputFileName << std::endl;
+            }
+        }
+        else if (outputFormat == "tiff")
+        {
+            // Save the depth image to file as 32-bit TIFF
+            if (cv::imwrite(outputFileName, depthImage))
+            {
+                std::cout << "Depth image saved successfully as " << outputFileName << std::endl;
+            }
+            else
+            {
+                std::cerr << "Failed to save the depth image as " << outputFileName << std::endl;
+            }
+        }
+        else
+        {
+            std::cerr << "Unsupported output format: " << outputFormat << std::endl;
+        }
     }
     else
     {
-        std::cout << "Depth image is empty, cannot save." << std::endl;
+        std::cerr << "DepthMap is empty. Cannot save the image." << std::endl;
     }
 }
-
-
 
 // trim leading and trailing whitespace from a string
 std::string FullAPIExample::trim(const std::string &str)
@@ -1575,7 +1623,7 @@ void FullAPIExample::SoftwareTriggerExample2()
         std::cout << "Device is not acquiring" << std::endl;
         return;
     }
-    for (std::size_t i = 0; i < 5; ++i) // how many frames to save
+    for (std::size_t i = 0; i < 1; ++i) // how many frames to save
     {
         std::cout << "Triggering the " << i << "-th frame" << std::endl;
         int FrameID = PhoXiDevice->TriggerFrame(/*If false is passed here, the device will reject the frame if it is not ready to be triggered, if true us supplied, it will wait for the trigger*/);
@@ -1612,7 +1660,7 @@ void FullAPIExample::SoftwareTriggerExample2()
             // Save frame as PLY file
             if (!SampleFrame->PointCloud.Empty())
             {
-                if (SampleFrame->SaveAsPly(frameFileNamePly, true, true))
+                if (SampleFrame->SaveAsPly(OutputFolder + frameFileNamePly, true, true))
                 {
                     std::cout << "Saved point cloud to " << frameFileNamePly << std::endl;
                 }
@@ -1622,16 +1670,28 @@ void FullAPIExample::SoftwareTriggerExample2()
                 }
             }
 
-            // 다른 포맷으로도 저장
+            // save frame as color img and depth img 
             std::string frameFileNameColorPng = OutputFolder + frameFileName + "_color" + ".png";
-            std::string frameFileNameDepthPng = OutputFolder + frameFileName + "_depth" + ".png";
+            std::string frameFileNameDepth;
+            std::string DepthOutputFormat = "tiff";
 
+            if (DepthOutputFormat == "tiff") {
+                frameFileNameDepth = OutputFolder + frameFileName + "_depth.tiff";
+            } else if (DepthOutputFormat == "png16") {
+                frameFileNameDepth = OutputFolder + frameFileName + "_depth.png";
+            } else if (DepthOutputFormat == "png8") {
+                frameFileNameDepth = OutputFolder + frameFileName + "_depth.png";
+            } else {
+                std::cerr << "Unsupported depth output format: " << DepthOutputFormat << std::endl;
+                return;
+            }
             if (SampleFrame)
             {
                 convertToOpenCV(SampleFrame);
                 saveColorCameraImage(SampleFrame, frameFileNameColorPng);
-                saveDepthImage(SampleFrame, frameFileNameDepthPng);
+                saveDepthImage(SampleFrame, frameFileNameDepth, DepthOutputFormat); // "png8", "png16", "tiff" 을 property로 받음
             }
+
         }
         else
         {
