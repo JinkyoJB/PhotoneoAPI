@@ -1473,11 +1473,17 @@ void FullAPIExample::saveDepthImage(const pho::api::PFrame &Frame, const std::st
         // Create an OpenCV Mat from the DepthMap data
         cv::Mat depthImage(height, width, CV_32FC1, Frame->DepthMap.GetDataPtr());
 
+        // depthImage 출력
+        // std::cout << "Depth Image : " << depthImage << std::endl;
+        
+
         if (outputFormat == "png8")
         {
             // Convert the depth values to a format suitable for display (e.g., 8-bit)
             cv::Mat depthImageDisplay;
             cv::normalize(depthImage, depthImageDisplay, 0, 255, cv::NORM_MINMAX, CV_8U);
+
+
 
             // Save the depth image as a PNG file
             if (cv::imwrite(outputFileName, depthImageDisplay))
@@ -1493,9 +1499,10 @@ void FullAPIExample::saveDepthImage(const pho::api::PFrame &Frame, const std::st
         {
             // Normalize the depth image to 16-bit
             cv::Mat depthImage16U;
-            double minVal, maxVal;
-            cv::minMaxLoc(depthImage, &minVal, &maxVal);
-            depthImage.convertTo(depthImage16U, CV_16UC1, 65535.0 / (maxVal - minVal), -minVal * 65535.0 / (maxVal - minVal));
+            //double minVal, maxVal;
+            //cv::minMaxLoc(depthImage, &minVal, &maxVal);
+            //depthImage.convertTo(depthImage16U, CV_16UC1, 65535.0 / (maxVal - minVal), -minVal * 65535.0 / (maxVal - minVal));
+            depthImage.convertTo(depthImage16U, CV_16UC1);
 
             // Save the depth image to file
             if (cv::imwrite(outputFileName, depthImage16U))
