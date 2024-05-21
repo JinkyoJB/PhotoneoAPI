@@ -19,7 +19,6 @@ endif(UNIX AND NOT APPLE)
 
 set(Files
     ${FullAPIExample_SOURCE_DIR}/FullAPIExample.cpp
-    ${FullAPIExample_SOURCE_DIR}/ReadMe.txt
 )
 
 add_executable (FullAPIExample 

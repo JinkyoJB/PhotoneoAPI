@@ -53,6 +53,7 @@ class FullAPIExample
     void convertToOpenCV(const pho::api::PFrame &Frame);
     void saveColorCameraImage(const pho::api::PFrame &Frame, const std::string &outputFileName);
     void saveDepthImage(const pho::api::PFrame &Frame, const std::string &outputFileName, const std::string &outputFormat);
+    void saveTexture(const pho::api::PFrame &Frame, const std::string &outputFileName);
 
     void GetAvailableDevicesExample();
     void ConnectPhoXiDeviceExample();
@@ -1409,6 +1410,48 @@ void FullAPIExample::saveColorCameraImage(const pho::api::PFrame &Frame, const s
     }
 }
 
+void FullAPIExample::saveTexture(const pho::api::PFrame &Frame, const std::string &outputFileName)
+{
+    // 데이터 타입 확인
+    if (!Frame->TextureRGB.Empty())
+    {
+        std::cout << "    TextureRGB:      (" << Frame->TextureRGB.Size.Width
+                  << " x " << Frame->TextureRGB.Size.Height
+                  << ") Type: " << Frame->TextureRGB.GetElementName()
+                  << std::endl;
+    }
+
+    if (!Frame->TextureRGB.Empty())
+    {
+        // Get the height and width of the TextureRGB
+        const int height = Frame->TextureRGB.Size.Height;
+        const int width = Frame->TextureRGB.Size.Width;
+
+        // Create an OpenCV Mat from the TextureRGB data
+        cv::Mat textureImage(height, width, CV_16SC3, Frame->TextureRGB.GetDataPtr());
+        // Convert RBG to BGR by swapping the second and third channels
+        std::vector<cv::Mat> channels(3);
+        cv::split(textureImage, channels);
+        std::swap(channels[0], channels[2]);
+        cv::merge(channels, textureImage);
+
+        // Save the texture image as a PNG file
+        if (cv::imwrite(outputFileName, textureImage))
+        {
+            std::cout << "Texture image saved successfully as " << outputFileName << std::endl;
+        }
+        else
+        {
+            std::cerr << "Failed to save the texture image as " << outputFileName << std::endl;
+        }
+    }
+    else
+    {
+        std::cerr << "TextureRGB is empty. Cannot save the image." << std::endl;
+    }
+}
+
+
 //"png8" , "png16", "tiff" 을 property로 받음
 void FullAPIExample::saveDepthImage(const pho::api::PFrame &Frame, const std::string &outputFileName, const std::string &outputFormat)
 {
@@ -1670,10 +1713,11 @@ void FullAPIExample::SoftwareTriggerExample2()
                 }
             }
 
-            // save frame as color img and depth img 
+            // save frame as color img and depth img, texture img
             std::string frameFileNameColorPng = OutputFolder + frameFileName + "_color" + ".png";
             std::string frameFileNameDepth;
-            std::string DepthOutputFormat = "tiff";
+            std::string DepthOutputFormat = "png16";
+            std::string frameFileNameTexture = OutputFolder + frameFileName + "_texture.png";
 
             if (DepthOutputFormat == "tiff") {
                 frameFileNameDepth = OutputFolder + frameFileName + "_depth.tiff";
@@ -1681,7 +1725,12 @@ void FullAPIExample::SoftwareTriggerExample2()
                 frameFileNameDepth = OutputFolder + frameFileName + "_depth.png";
             } else if (DepthOutputFormat == "png8") {
                 frameFileNameDepth = OutputFolder + frameFileName + "_depth.png";
-            } else {
+            } else if (DepthOutputFormat == "png") {
+                std::cerr << "Unsupported depth output format: " << DepthOutputFormat << std::endl;
+                return;
+            }
+            
+            else {
                 std::cerr << "Unsupported depth output format: " << DepthOutputFormat << std::endl;
                 return;
             }
@@ -1690,6 +1739,7 @@ void FullAPIExample::SoftwareTriggerExample2()
                 convertToOpenCV(SampleFrame);
                 saveColorCameraImage(SampleFrame, frameFileNameColorPng);
                 saveDepthImage(SampleFrame, frameFileNameDepth, DepthOutputFormat); // "png8", "png16", "tiff" 을 property로 받음
+                saveTexture(SampleFrame, frameFileNameTexture);
             }
 
         }
